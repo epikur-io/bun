@@ -3,8 +3,10 @@ package schema
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/uptrace/bun/dialect"
+	"github.com/uptrace/bun/dialect/sqltype"
 	"github.com/uptrace/bun/internal"
 	"github.com/uptrace/bun/internal/tagparser"
 )
@@ -121,7 +123,27 @@ func (f *Field) appendValue(gen QueryGen, b []byte, strct reflect.Value, default
 	if f.Append == nil {
 		panic(fmt.Errorf("bun: AppendValue(unsupported %s)", fv.Type()))
 	}
+
+	if gen.collector != nil && f.canBind() {
+		if v := fv.Interface(); BindableValue(v) {
+			return gen.appendBindArg(b, v)
+		}
+	}
 	return f.Append(gen, b, fv)
+}
+
+// canBind reports whether the field value may be passed to the driver as a query
+// argument instead of being inlined. Fields with a custom SQL representation are
+// always inlined.
+func (f *Field) canBind() bool {
+	if f.Tag.HasOption("msgpack") {
+		return false
+	}
+	switch strings.ToUpper(f.UserSQLType) {
+	case sqltype.JSON, sqltype.JSONB:
+		return false
+	}
+	return true
 }
 
 func (f *Field) ScanValue(strct reflect.Value, src any) error {

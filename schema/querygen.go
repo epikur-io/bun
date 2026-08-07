@@ -19,6 +19,9 @@ var nopQueryGen = QueryGen{
 type QueryGen struct {
 	dialect Dialect
 	args    *namedArgList
+	// collector is set when the query is generated with bind placeholders
+	// instead of inlined argument values.
+	collector *ArgsCollector
 }
 
 func NewQueryGen(dialect Dialect) QueryGen {
@@ -116,17 +119,58 @@ func (f QueryGen) HasFeature(feature feature.Feature) bool {
 }
 
 func (f QueryGen) WithArg(arg NamedArgAppender) QueryGen {
-	return QueryGen{
-		dialect: f.dialect,
-		args:    f.args.WithArg(arg),
-	}
+	f.args = f.args.WithArg(arg)
+	return f
 }
 
 func (f QueryGen) WithNamedArg(name string, value any) QueryGen {
-	return QueryGen{
-		dialect: f.dialect,
-		args:    f.args.WithArg(&namedArg{name: name, value: value}),
+	f.args = f.args.WithArg(&namedArg{name: name, value: value})
+	return f
+}
+
+// WithArgsCollector returns a copy of the gen that appends bind placeholders
+// (`?`, or `$1`/`@p1` depending on the dialect) instead of inlining argument
+// values, and collects those values in c.
+//
+// Only values that a database/sql driver accepts are replaced with placeholders,
+// see BindableValue. Everything else (JSON, arrays, sub-queries, identifiers)
+// keeps being inlined.
+func (f QueryGen) WithArgsCollector(c *ArgsCollector) QueryGen {
+	f.collector = c
+	return f
+}
+
+// WithoutArgsCollector returns a copy of the gen that inlines argument values
+// again. It is used for query fragments that are post-processed after they have
+// been generated, and therefore cannot contain placeholders.
+func (f QueryGen) WithoutArgsCollector() QueryGen {
+	f.collector = nil
+	return f
+}
+
+// ArgsCollector returns the collector the gen appends arguments to, or nil if
+// values are inlined into the query.
+func (f QueryGen) ArgsCollector() *ArgsCollector {
+	return f.collector
+}
+
+// AppendArgValue appends v as a bind placeholder when the gen collects args and
+// v is bindable, and inlines it otherwise. Use it instead of Append for values
+// that are appended to the query buffer in the order they are executed.
+func (f QueryGen) AppendArgValue(b []byte, v any) []byte {
+	if f.collector != nil && BindableValue(v) {
+		return f.appendBindArg(b, v)
 	}
+	return f.Append(b, v)
+}
+
+// appendBindArg appends a bind placeholder for arg and collects its value.
+func (f QueryGen) appendBindArg(b []byte, arg any) []byte {
+	idx := f.collector.add(arg)
+	if f.collector.Style == QuestionPlaceholder {
+		return append(b, '?')
+	}
+	return AppendPlaceholder(f.dialect, b, idx)
 }
 
 func (f QueryGen) FormatQuery(query string, args ...any) string {
@@ -155,7 +199,7 @@ func (f QueryGen) append(dst []byte, p *parser.Parser, args []any) []byte {
 
 	var argIndex int
 	for p.Valid() {
-		b, ok := p.ReadSep('?')
+		b, ok := p.ReadUntilPlaceholder()
 		if !ok {
 			dst = append(dst, b...)
 			continue
@@ -224,6 +268,9 @@ func (gen QueryGen) appendArg(b []byte, arg any) []byte {
 		}
 		return bb
 	default:
+		if gen.collector != nil && BindableValue(arg) {
+			return gen.appendBindArg(b, arg)
+		}
 		return gen.Append(b, arg)
 	}
 }

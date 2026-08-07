@@ -31,8 +31,11 @@ const (
 )
 
 func readColumnValue(rd *reader, dataType int32, dataLen int) (any, error) {
-	if dataLen == -1 {
-		return nil, nil
+	if dataLen < 0 {
+		if dataLen == -1 {
+			return nil, nil
+		}
+		return nil, errInvalidMessageLength // TODO or nil?
 	}
 
 	switch dataType {
@@ -59,6 +62,13 @@ func readColumnValue(rd *reader, dataType int32, dataLen int) (any, error) {
 		return readStringCol(rd, dataLen)
 	case pgBytea:
 		return readBytesCol(rd, dataLen)
+	}
+
+	if dataLen < 0 {
+		// dataLen == -1 signals SQL NULL; any other negative value is invalid
+		// and must not reach make([]byte, dataLen) (would panic). dataLen == 0
+		// is fine and keeps its previous behavior (empty value).
+		return nil, nil
 	}
 
 	b := make([]byte, dataLen)

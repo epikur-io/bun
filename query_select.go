@@ -173,13 +173,13 @@ func (q *SelectQuery) WhereOr(query string, args ...any) *SelectQuery {
 
 // WhereGroup groups WHERE conditions with the given separator (AND/OR).
 func (q *SelectQuery) WhereGroup(sep string, fn func(*SelectQuery) *SelectQuery) *SelectQuery {
-	saved := q.where
-	q.where = nil
+	saved, savedHasOr := q.where, q.whereHasOr
+	q.where, q.whereHasOr = nil, false
 
 	q = fn(q)
 
 	where := q.where
-	q.where = saved
+	q.where, q.whereHasOr = saved, savedHasOr
 
 	q.addWhereGroup(sep, where)
 
@@ -1179,6 +1179,35 @@ func (q *SelectQuery) String() string {
 	return string(buf)
 }
 
+// QueryWithArgs generates the SQL query with bind placeholders instead of inlined
+// values and returns it together with the arguments to bind, in the order the
+// placeholders appear in the query:
+//
+//	query, args, err := db.NewSelect().Model(&users).Where("name = ?", name).QueryWithArgs()
+//	stmt, err := db.PrepareContext(ctx, query)
+//	rows, err := stmt.QueryContext(ctx, args...)
+//
+// The query must be executed by database/sql - a prepared statement or the
+// underlying db.DB. Bun's own db.QueryContext/db.ExecContext re-format the query
+// and do not forward args to the driver.
+//
+// By default the placeholder syntax of the dialect is used: `?` for MySQL and
+// SQLite, `$1` for PostgreSQL and `@p1` for MSSQL. Pass schema.QuestionPlaceholder
+// to always use `?`, e.g. when the query is post-processed before it is executed.
+//
+// Only values a database/sql driver accepts are turned into arguments (numbers,
+// strings, bools, []byte, time.Time, sql.NullXXX and other driver.Valuer types).
+// Values Bun renders itself - JSON, arrays, sub-queries, identifiers, LIMIT and
+// OFFSET - stay inlined in the query.
+//
+// The SelectQuery must not be modified during query generation, so that repeated
+// calls return identical results.
+func (q *SelectQuery) QueryWithArgs(
+	style ...schema.PlaceholderStyle,
+) (query string, args []any, err error) {
+	return appendQueryWithArgs(q.db, q, placeholderStyle(style))
+}
+
 // Clone creates a deep copy of the SelectQuery.
 func (q *SelectQuery) Clone() *SelectQuery {
 	if q == nil {
@@ -1191,6 +1220,14 @@ func (q *SelectQuery) Clone() *SelectQuery {
 		}
 		clone := make([]schema.QueryWithArgs, len(args))
 		copy(clone, args)
+		return clone
+	}
+	cloneWhereFields := func(fields []*schema.Field) []*schema.Field {
+		if fields == nil {
+			return nil
+		}
+		clone := make([]*schema.Field, len(fields))
+		copy(clone, fields)
 		return clone
 	}
 	cloneHints := func(hints *indexHints) *indexHints {
@@ -1213,15 +1250,19 @@ func (q *SelectQuery) Clone() *SelectQuery {
 		whereBaseQuery: whereBaseQuery{
 			baseQuery: baseQuery{
 				db:             q.db,
+				conn:           q.conn,
 				table:          q.table,
 				model:          q.model,
+				err:            q.err,
 				tableModel:     tableModel,
 				with:           make([]WithQuery, len(q.with)),
 				tables:         cloneArgs(q.tables),
 				columns:        cloneArgs(q.columns),
 				modelTableName: q.modelTableName,
+				flags:          q.flags,
 			},
-			where: make([]schema.QueryWithSep, len(q.where)),
+			where:       make([]schema.QueryWithSep, len(q.where)),
+			whereFields: cloneWhereFields(q.whereFields),
 		},
 
 		idxHintsQuery: idxHintsQuery{
@@ -1246,9 +1287,11 @@ func (q *SelectQuery) Clone() *SelectQuery {
 
 	for i, w := range q.with {
 		clone.with[i] = WithQuery{
-			name:      w.name,
-			recursive: w.recursive,
-			query:     w.query, // TODO: maybe clone is need
+			name:            w.name,
+			recursive:       w.recursive,
+			materialized:    w.materialized,
+			notMaterialized: w.notMaterialized,
+			query:           w.query, // TODO: maybe clone is need
 		}
 	}
 

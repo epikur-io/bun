@@ -139,6 +139,12 @@ func (d *Dialect) IdentQuote() byte {
 	return '"'
 }
 
+// AppendPlaceholder appends a PostgreSQL bind placeholder, e.g. $1.
+func (d *Dialect) AppendPlaceholder(b []byte, idx int) []byte {
+	b = append(b, '$')
+	return strconv.AppendInt(b, int64(idx), 10)
+}
+
 func (d *Dialect) AppendUint32(b []byte, n uint32) []byte {
 	if d.uintAsInt {
 		return strconv.AppendInt(b, int64(int32(n)), 10)
