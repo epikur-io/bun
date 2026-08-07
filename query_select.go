@@ -1179,6 +1179,35 @@ func (q *SelectQuery) String() string {
 	return string(buf)
 }
 
+// QueryWithArgs generates the SQL query with bind placeholders instead of inlined
+// values and returns it together with the arguments to bind, in the order the
+// placeholders appear in the query:
+//
+//	query, args, err := db.NewSelect().Model(&users).Where("name = ?", name).QueryWithArgs()
+//	stmt, err := db.PrepareContext(ctx, query)
+//	rows, err := stmt.QueryContext(ctx, args...)
+//
+// The query must be executed by database/sql - a prepared statement or the
+// underlying db.DB. Bun's own db.QueryContext/db.ExecContext re-format the query
+// and do not forward args to the driver.
+//
+// By default the placeholder syntax of the dialect is used: `?` for MySQL and
+// SQLite, `$1` for PostgreSQL and `@p1` for MSSQL. Pass schema.QuestionPlaceholder
+// to always use `?`, e.g. when the query is post-processed before it is executed.
+//
+// Only values a database/sql driver accepts are turned into arguments (numbers,
+// strings, bools, []byte, time.Time, sql.NullXXX and other driver.Valuer types).
+// Values Bun renders itself - JSON, arrays, sub-queries, identifiers, LIMIT and
+// OFFSET - stay inlined in the query.
+//
+// The SelectQuery must not be modified during query generation, so that repeated
+// calls return identical results.
+func (q *SelectQuery) QueryWithArgs(
+	style ...schema.PlaceholderStyle,
+) (query string, args []any, err error) {
+	return appendQueryWithArgs(q.db, q, placeholderStyle(style))
+}
+
 // Clone creates a deep copy of the SelectQuery.
 func (q *SelectQuery) Clone() *SelectQuery {
 	if q == nil {

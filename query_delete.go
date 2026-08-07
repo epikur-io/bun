@@ -391,6 +391,21 @@ func (q *DeleteQuery) afterDeleteHook(ctx context.Context) error {
 	return nil
 }
 
+// QueryWithArgs generates the SQL query with bind placeholders instead of inlined
+// values and returns it together with the arguments to bind, in the order the
+// placeholders appear in the query.
+//
+// Note that a soft delete generates an UPDATE query whose timestamp is always
+// inlined, because it is rendered separately from the query buffer.
+//
+// See SelectQuery.QueryWithArgs for the placeholder syntax, which values are bound
+// and how the query must be executed.
+func (q *DeleteQuery) QueryWithArgs(
+	style ...schema.PlaceholderStyle,
+) (query string, args []any, err error) {
+	return appendQueryWithArgs(q.db, q, placeholderStyle(style))
+}
+
 // String returns the generated SQL query string. The DeleteQuery instance must not be
 // modified during query generation to ensure multiple calls to String() return identical results.
 func (q *DeleteQuery) String() string {

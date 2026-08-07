@@ -593,6 +593,19 @@ func (q *UpdateQuery) hasTableAlias(gen schema.QueryGen) bool {
 	return gen.HasFeature(feature.UpdateMultiTable | feature.UpdateTableAlias)
 }
 
+// QueryWithArgs generates the SQL query with bind placeholders instead of inlined
+// values and returns it together with the arguments to bind, in the order the
+// placeholders appear in the query. The values of the SET clause are bound before
+// the values of the WHERE clause.
+//
+// See SelectQuery.QueryWithArgs for the placeholder syntax, which values are bound
+// and how the query must be executed.
+func (q *UpdateQuery) QueryWithArgs(
+	style ...schema.PlaceholderStyle,
+) (query string, args []any, err error) {
+	return appendQueryWithArgs(q.db, q, placeholderStyle(style))
+}
+
 // String returns the generated SQL query string. The UpdateQuery instance must not be
 // modified during query generation to ensure multiple calls to String() return identical results.
 func (q *UpdateQuery) String() string {

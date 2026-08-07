@@ -736,6 +736,19 @@ func (q *InsertQuery) tryLastInsertID(res sql.Result, dest []any) error {
 	return nil
 }
 
+// QueryWithArgs generates the SQL query with bind placeholders instead of inlined
+// values and returns it together with the arguments to bind, in the order the
+// placeholders appear in the query. The inserted values, including the values of
+// a struct, slice or map model, are bound.
+//
+// See SelectQuery.QueryWithArgs for the placeholder syntax, which values are bound
+// and how the query must be executed.
+func (q *InsertQuery) QueryWithArgs(
+	style ...schema.PlaceholderStyle,
+) (query string, args []any, err error) {
+	return appendQueryWithArgs(q.db, q, placeholderStyle(style))
+}
+
 // String returns the generated SQL query string. The InsertQuery instance must not be
 // modified during query generation to ensure multiple calls to String() return identical results.
 func (q *InsertQuery) String() string {

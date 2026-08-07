@@ -142,7 +142,7 @@ func (m *mapModel) appendColumnsValues(gen schema.QueryGen, b []byte) []byte {
 		if isTemplate {
 			b = append(b, '?')
 		} else {
-			b = gen.Append(b, m.m[k])
+			b = gen.AppendArgValue(b, m.m[k])
 		}
 	}
 
@@ -170,7 +170,7 @@ func (m *mapModel) appendSet(gen schema.QueryGen, b []byte) []byte {
 		if isTemplate {
 			b = append(b, '?')
 		} else {
-			b = gen.Append(b, m.m[k])
+			b = gen.AppendArgValue(b, m.m[k])
 		}
 	}
 

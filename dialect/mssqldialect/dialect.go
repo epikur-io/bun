@@ -120,6 +120,12 @@ func (d *Dialect) IdentQuote() byte {
 	return '"'
 }
 
+// AppendPlaceholder appends an MSSQL bind placeholder, e.g. @p1.
+func (d *Dialect) AppendPlaceholder(b []byte, idx int) []byte {
+	b = append(b, "@p"...)
+	return strconv.AppendInt(b, int64(idx), 10)
+}
+
 func (*Dialect) AppendTime(b []byte, tm time.Time) []byte {
 	b = append(b, '\'')
 	b = tm.AppendFormat(b, "2006-01-02 15:04:05.999")

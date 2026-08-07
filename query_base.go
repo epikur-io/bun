@@ -758,6 +758,28 @@ func appendColumns(b []byte, table schema.Safe, fields []*schema.Field) []byte {
 	return b
 }
 
+// placeholderStyle returns the style the caller asked for, or the dialect default.
+func placeholderStyle(style []schema.PlaceholderStyle) schema.PlaceholderStyle {
+	if len(style) > 0 {
+		return style[0]
+	}
+	return schema.DialectPlaceholder
+}
+
+// appendQueryWithArgs generates the query with bind placeholders instead of
+// inlined values and returns it together with the collected args.
+func appendQueryWithArgs(
+	db *DB, query schema.QueryAppender, style schema.PlaceholderStyle,
+) (string, []any, error) {
+	collector := schema.NewArgsCollector(style)
+
+	b, err := query.AppendQuery(db.QueryGen().WithArgsCollector(collector), nil)
+	if err != nil {
+		return "", nil, err
+	}
+	return string(b), collector.Args(), nil
+}
+
 func formatterWithModel(gen schema.QueryGen, model schema.NamedArgAppender) schema.QueryGen {
 	if gen.IsNop() {
 		return gen
